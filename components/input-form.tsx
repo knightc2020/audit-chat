@@ -52,27 +52,44 @@ export function InputForm({
     resetTranscript
   } = useSpeechRecognition({
     onResult: (result) => {
+      console.log('语音识别结果:', result); // 调试信息
       setCurrentTranscript(result.transcript);
       
-      // 如果是最终结果，将其添加到输入框
-      if (result.isFinal) {
-        const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript;
-        setCounterpartMessage(newMessage);
-        setCurrentTranscript('');
-        
-        // 重置超时计时器
-        if (recognitionTimeoutRef.current) {
-          clearTimeout(recognitionTimeoutRef.current);
+      // 修改逻辑：不只依赖isFinal，也处理有内容的中间结果
+      if (result.transcript && result.transcript.trim()) {
+        // 如果是最终结果，或者中间结果有足够长度且停顿了一会
+        if (result.isFinal || result.transcript.trim().length > 3) {
+          console.log('准备添加文字到输入框:', result.transcript); // 调试信息
+          
+          // 清除之前的超时
+          if (recognitionTimeoutRef.current) {
+            clearTimeout(recognitionTimeoutRef.current);
+          }
+          
+          // 如果是最终结果，立即添加
+          if (result.isFinal) {
+            const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
+            setCounterpartMessage(newMessage);
+            setCurrentTranscript('');
+            console.log('立即添加文字:', newMessage); // 调试信息
+          } else {
+            // 如果是中间结果，等待1.5秒后添加（防止用户还在说话）
+            recognitionTimeoutRef.current = setTimeout(() => {
+              const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
+              setCounterpartMessage(newMessage);
+              setCurrentTranscript('');
+              console.log('延迟添加文字:', newMessage); // 调试信息
+              
+              // 停止录音
+              stopListening();
+              setIsRecognizing(false);
+            }, 1500);
+          }
         }
-        
-        // 3秒后自动停止录音
-        recognitionTimeoutRef.current = setTimeout(() => {
-          stopListening();
-          setIsRecognizing(false);
-        }, 3000);
       }
     },
     onError: (error) => {
+      console.error('语音识别错误:', error); // 调试信息
       toast({
         title: "语音识别出错",
         description: error,
@@ -82,17 +99,26 @@ export function InputForm({
       setCurrentTranscript('');
     },
     onStart: () => {
+      console.log('语音识别开始'); // 调试信息
       setIsRecognizing(true);
       toast({
         title: "开始语音识别",
-        description: "请说话，3秒无声音后将自动停止",
+        description: "请说话，停顿1.5秒后将自动添加到输入框",
       });
     },
     onEnd: () => {
+      console.log('语音识别结束'); // 调试信息
       setIsRecognizing(false);
-      setCurrentTranscript('');
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
+      }
+      
+      // 如果还有未处理的文字，添加到输入框
+      if (currentTranscript && currentTranscript.trim()) {
+        const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + currentTranscript.trim();
+        setCounterpartMessage(newMessage);
+        setCurrentTranscript('');
+        console.log('结束时添加文字:', newMessage); // 调试信息
       }
     },
     continuous: true,
@@ -119,9 +145,11 @@ export function InputForm({
     }
 
     if (isListening) {
+      console.log('停止语音识别'); // 调试信息
       stopListening();
       setIsRecognizing(false);
     } else {
+      console.log('开始语音识别'); // 调试信息
       resetTranscript();
       setCurrentTranscript('');
       startListening();
@@ -184,7 +212,7 @@ export function InputForm({
   };
 
   // 显示的文本内容
-  const displayText = counterpartMessage + (currentTranscript ? ' ' + currentTranscript : '');
+  const displayText = counterpartMessage + (currentTranscript ? (counterpartMessage ? ' ' : '') + currentTranscript : '');
 
   return (
     <div className="space-y-6">
@@ -263,7 +291,9 @@ export function InputForm({
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
             正在识别语音...
             {currentTranscript && (
-              <span className="text-gray-600">"{currentTranscript}"</span>
+              <span className="text-gray-600 font-medium">
+                识别中: "{currentTranscript}"
+              </span>
             )}
           </div>
         )}
