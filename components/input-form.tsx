@@ -52,44 +52,46 @@ export function InputForm({
     resetTranscript
   } = useSpeechRecognition({
     onResult: (result) => {
-      console.log('语音识别结果:', result); // 调试信息
+      console.log('🎤 语音识别结果:', result);
       setCurrentTranscript(result.transcript);
       
-      // 修改逻辑：不只依赖isFinal，也处理有内容的中间结果
-      if (result.transcript && result.transcript.trim()) {
-        // 如果是最终结果，或者中间结果有足够长度且停顿了一会
-        if (result.isFinal || result.transcript.trim().length > 3) {
-          console.log('准备添加文字到输入框:', result.transcript); // 调试信息
-          
-          // 清除之前的超时
-          if (recognitionTimeoutRef.current) {
-            clearTimeout(recognitionTimeoutRef.current);
-          }
-          
-          // 如果是最终结果，立即添加
-          if (result.isFinal) {
-            const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
-            setCounterpartMessage(newMessage);
-            setCurrentTranscript('');
-            console.log('立即添加文字:', newMessage); // 调试信息
-          } else {
-            // 如果是中间结果，等待1.5秒后添加（防止用户还在说话）
-            recognitionTimeoutRef.current = setTimeout(() => {
-              const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
-              setCounterpartMessage(newMessage);
-              setCurrentTranscript('');
-              console.log('延迟添加文字:', newMessage); // 调试信息
-              
-              // 停止录音
-              stopListening();
-              setIsRecognizing(false);
-            }, 1500);
-          }
+      // 处理最终结果
+      if (result.isFinal && result.transcript.trim()) {
+        console.log('✅ 最终结果，立即添加到输入框:', result.transcript);
+        const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
+        setCounterpartMessage(newMessage);
+        setCurrentTranscript('');
+        
+        // 清除超时定时器
+        if (recognitionTimeoutRef.current) {
+          clearTimeout(recognitionTimeoutRef.current);
+          recognitionTimeoutRef.current = null;
         }
+      } 
+      // 处理中间结果 - 设置延迟添加
+      else if (!result.isFinal && result.transcript.trim().length > 2) {
+        console.log('⏳ 中间结果，设置延迟添加:', result.transcript);
+        
+        // 清除之前的定时器
+        if (recognitionTimeoutRef.current) {
+          clearTimeout(recognitionTimeoutRef.current);
+        }
+        
+        // 设置新的定时器
+        recognitionTimeoutRef.current = setTimeout(() => {
+          console.log('⏰ 延迟时间到，添加中间结果到输入框:', result.transcript);
+          const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
+          setCounterpartMessage(newMessage);
+          setCurrentTranscript('');
+          
+          // 停止识别
+          stopListening();
+          setIsRecognizing(false);
+        }, 2000); // 增加到2秒
       }
     },
     onError: (error) => {
-      console.error('语音识别错误:', error); // 调试信息
+      console.error('❌ 语音识别错误:', error);
       toast({
         title: "语音识别出错",
         description: error,
@@ -97,28 +99,37 @@ export function InputForm({
       });
       setIsRecognizing(false);
       setCurrentTranscript('');
+      
+      // 清除定时器
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+        recognitionTimeoutRef.current = null;
+      }
     },
     onStart: () => {
-      console.log('语音识别开始'); // 调试信息
+      console.log('🎬 语音识别开始');
       setIsRecognizing(true);
       toast({
         title: "开始语音识别",
-        description: "请说话，停顿1.5秒后将自动添加到输入框",
+        description: "请说话，停顿2秒后将自动添加到输入框",
       });
     },
     onEnd: () => {
-      console.log('语音识别结束'); // 调试信息
+      console.log('🏁 语音识别结束');
       setIsRecognizing(false);
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
       
-      // 如果还有未处理的文字，添加到输入框
+      // 如果还有未处理的文字，立即添加到输入框
       if (currentTranscript && currentTranscript.trim()) {
+        console.log('🔚 识别结束时添加剩余文字:', currentTranscript);
         const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + currentTranscript.trim();
         setCounterpartMessage(newMessage);
         setCurrentTranscript('');
-        console.log('结束时添加文字:', newMessage); // 调试信息
+      }
+      
+      // 清除定时器
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+        recognitionTimeoutRef.current = null;
       }
     },
     continuous: true,
@@ -145,11 +156,17 @@ export function InputForm({
     }
 
     if (isListening) {
-      console.log('停止语音识别'); // 调试信息
+      console.log('🛑 手动停止语音识别');
       stopListening();
       setIsRecognizing(false);
+      
+      // 清除定时器
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+        recognitionTimeoutRef.current = null;
+      }
     } else {
-      console.log('开始语音识别'); // 调试信息
+      console.log('▶️ 开始语音识别');
       resetTranscript();
       setCurrentTranscript('');
       startListening();
@@ -162,6 +179,12 @@ export function InputForm({
     if (isListening) {
       stopListening();
       setIsRecognizing(false);
+    }
+    
+    // 清除定时器
+    if (recognitionTimeoutRef.current) {
+      clearTimeout(recognitionTimeoutRef.current);
+      recognitionTimeoutRef.current = null;
     }
   };
 
@@ -253,6 +276,7 @@ export function InputForm({
         <div className="relative">
           <Textarea
             id="counterpart-message"
+            name="counterpart-message"
             placeholder="请输入对方所说的内容，或点击麦克风使用语音输入..."
             className={cn(
               "mt-2 min-h-[120px] pr-12",
@@ -260,7 +284,7 @@ export function InputForm({
               currentTranscript && "text-blue-600"
             )}
             value={displayText}
-            onChange={(e) => setCounterpartMessage(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCounterpartMessage(e.target.value)}
           />
           
           {/* 语音输入按钮 */}
@@ -323,7 +347,7 @@ export function InputForm({
               max={10}
               step={1}
               value={[intensityLevel]}
-              onValueChange={(value) => setIntensityLevel(value[0])}
+              onValueChange={(value: number[]) => setIntensityLevel(value[0])}
               className="cursor-pointer"
             />
           </div>

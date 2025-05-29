@@ -70,10 +70,6 @@ interface SpeechRecognitionAlternative {
 
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
   const {
-    onResult,
-    onError,
-    onStart,
-    onEnd,
     continuous = true,
     language = 'zh-CN'
   } = options;
@@ -82,13 +78,25 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
   const [isSupported, setIsSupported] = React.useState(false);
   const [transcript, setTranscript] = React.useState('');
   const recognitionRef = React.useRef<SpeechRecognition | null>(null);
-
-  // 检查浏览器支持
+  
+  // 使用useRef保存回调函数，避免依赖数组问题
+  const callbacksRef = React.useRef(options);
+  
+  // 更新回调函数引用
   React.useEffect(() => {
+    callbacksRef.current = options;
+  }, [options.onResult, options.onError, options.onStart, options.onEnd]);
+
+  // 检查浏览器支持并初始化（只在mount时执行一次）
+  React.useEffect(() => {
+    console.log('🔧 初始化语音识别Hook');
+    
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     setIsSupported(!!SpeechRecognition);
 
-    if (SpeechRecognition) {
+    if (SpeechRecognition && !recognitionRef.current) {
+      console.log('🎯 创建语音识别实例');
+      
       const recognition = new SpeechRecognition();
       recognition.continuous = continuous;
       recognition.interimResults = true;
@@ -96,35 +104,55 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
+        console.log('🎬 Hook: 语音识别开始');
         setIsListening(true);
-        onStart?.();
+        callbacksRef.current.onStart?.();
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
+        console.log('🎯 Hook收到语音识别结果，results长度:', event.results.length);
+        
         let finalTranscript = '';
         let interimTranscript = '';
+        let hasAnyFinal = false;
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
+          console.log(`结果 ${i}: "${result[0].transcript}", isFinal: ${result.isFinal}, confidence: ${result[0].confidence}`);
+          
           if (result.isFinal) {
             finalTranscript += result[0].transcript;
+            hasAnyFinal = true;
           } else {
             interimTranscript += result[0].transcript;
           }
         }
 
+        // 优先使用最终结果，如果没有则使用中间结果
         const currentTranscript = finalTranscript || interimTranscript;
+        const isFinal = hasAnyFinal || !!finalTranscript;
+        
+        console.log('🎤 Hook准备发送结果:', { 
+          transcript: currentTranscript, 
+          isFinal,
+          finalTranscript,
+          interimTranscript 
+        });
+
         setTranscript(currentTranscript);
 
-        onResult?.({
-          transcript: currentTranscript,
-          confidence: event.results[event.results.length - 1]?.[0]?.confidence || 0,
-          isFinal: event.results[event.results.length - 1]?.isFinal || false
-        });
+        // 只有当有实际内容时才调用onResult
+        if (currentTranscript.trim()) {
+          callbacksRef.current.onResult?.({
+            transcript: currentTranscript,
+            confidence: event.results[event.results.length - 1]?.[0]?.confidence || 0,
+            isFinal: isFinal
+          });
+        }
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('语音识别错误:', event.error);
+        console.error('❌ Hook: 语音识别错误:', event.error);
         let errorMessage = '语音识别出错';
         
         switch (event.error) {
@@ -145,49 +173,61 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
             break;
         }
         
-        onError?.(errorMessage);
+        callbacksRef.current.onError?.(errorMessage);
         setIsListening(false);
       };
 
       recognition.onend = () => {
+        console.log('🏁 Hook: 语音识别结束');
         setIsListening(false);
-        onEnd?.();
+        callbacksRef.current.onEnd?.();
       };
 
       recognitionRef.current = recognition;
+      console.log('✅ 语音识别实例创建完成');
     }
 
     return () => {
+      console.log('🧹 清理语音识别实例');
       if (recognitionRef.current) {
         recognitionRef.current.abort();
+        recognitionRef.current = null;
       }
     };
-  }, [continuous, language, onStart, onResult, onError, onEnd]);
+  }, [continuous, language]); // 只依赖静态配置
 
   const startListening = React.useCallback(() => {
+    console.log('▶️ Hook: 尝试开始监听');
+    
     if (!isSupported) {
-      onError?.('浏览器不支持语音识别功能');
+      console.error('❌ Hook: 浏览器不支持');
+      callbacksRef.current.onError?.('浏览器不支持语音识别功能');
       return;
     }
 
     if (recognitionRef.current && !isListening) {
+      console.log('🎙️ Hook: 启动语音识别');
       setTranscript('');
       try {
         recognitionRef.current.start();
       } catch (error) {
-        console.error('启动语音识别失败:', error);
-        onError?.('启动语音识别失败');
+        console.error('❌ Hook: 启动失败:', error);
+        callbacksRef.current.onError?.('启动语音识别失败');
       }
+    } else {
+      console.warn('⚠️ Hook: 无法启动 - recognition存在:', !!recognitionRef.current, ', 正在监听:', isListening);
     }
-  }, [isSupported, isListening, onError]);
+  }, [isSupported, isListening]);
 
   const stopListening = React.useCallback(() => {
+    console.log('🛑 Hook: 停止监听');
     if (recognitionRef.current && isListening) {
       recognitionRef.current.stop();
     }
   }, [isListening]);
 
   const abortListening = React.useCallback(() => {
+    console.log('💥 Hook: 中止监听');
     if (recognitionRef.current) {
       recognitionRef.current.abort();
       setIsListening(false);
@@ -195,6 +235,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
   }, []);
 
   const resetTranscript = React.useCallback(() => {
+    console.log('🔄 Hook: 重置转录');
     setTranscript('');
   }, []);
 
