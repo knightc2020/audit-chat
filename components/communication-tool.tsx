@@ -4,19 +4,48 @@ import { useState } from 'react';
 import { InputForm } from '@/components/input-form';
 import { ResponseList } from '@/components/response-list';
 import { generateResponses } from '@/lib/api';
+import { testOpenRouterAPI } from '@/lib/test-api';
 import { useToast } from '@/hooks/use-toast';
 import { useVoiceCommands } from '@/hooks/use-voice-commands';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Command, Mic } from 'lucide-react';
+import { Loader2, Command, Mic, TestTube } from 'lucide-react';
 
 export function CommunicationTool() {
   const [counterpartMessage, setCounterpartMessage] = useState('');
   const [intensityLevel, setIntensityLevel] = useState(5);
   const [responses, setResponses] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isTestingAPI, setIsTestingAPI] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState('');
   const { toast } = useToast();
+
+  const handleAPITest = async () => {
+    setIsTestingAPI(true);
+    try {
+      const result = await testOpenRouterAPI();
+      if (result.success) {
+        toast({
+          title: "API测试成功 ✅",
+          description: "OpenRouter API连接正常",
+        });
+      } else {
+        toast({
+          title: "API测试失败 ❌",
+          description: result.error || "连接失败",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "API测试异常",
+        description: "测试过程中发生错误",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTestingAPI(false);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!counterpartMessage.trim()) {
@@ -47,7 +76,7 @@ export function CommunicationTool() {
       console.error("生成回复时出错:", error);
       toast({
         title: "生成回复失败",
-        description: "请稍后再试或检查网络连接",
+        description: error instanceof Error ? error.message : "请稍后再试或检查网络连接",
         variant: "destructive",
       });
     } finally {
@@ -124,6 +153,38 @@ export function CommunicationTool() {
 
   return (
     <div className="space-y-8 max-w-3xl mx-auto">
+      {/* API测试面板 */}
+      <Card className="border border-orange-200 bg-orange-50/30">
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <TestTube className="h-5 w-5 text-orange-600" />
+              <div>
+                <h3 className="font-medium text-orange-800">API连接测试</h3>
+                <p className="text-sm text-orange-600">
+                  如果回复失败，请先测试API连接
+                </p>
+              </div>
+            </div>
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAPITest}
+              disabled={isTestingAPI || isLoading}
+              className="flex items-center gap-2"
+            >
+              {isTestingAPI ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <TestTube className="h-4 w-4" />
+              )}
+              {isTestingAPI ? '测试中...' : '测试API'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 语音命令控制面板 */}
       {voiceCommandSupported && (
         <Card className="border border-blue-200 bg-blue-50/30">

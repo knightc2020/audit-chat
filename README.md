@@ -11,7 +11,7 @@
 ### 💬 智能沟通生成
 - **输入对方话语**：支持文字输入和语音识别
 - **调整语气强度**：1-10级可调节的语气强烈程度
-- **AI智能回复**：基于GPT-4的专业审计回复生成
+- **AI智能回复**：基于DeepSeek V3 Base模型的专业审计回复生成
 - **历史记录**：保存所有沟通记录，支持回顾和参考
 
 ### 🎤 语音功能（已完美修复）
@@ -34,6 +34,8 @@
 - **Tailwind CSS** - 现代化的UI设计
 - **Shadcn/ui组件** - 高质量的UI组件库
 - **Web Speech API** - 原生浏览器语音识别
+- **原生 Fetch API** - 轻量级HTTP客户端，无需额外依赖
+- **环境变量安全** - API密钥安全存储，避免泄露风险
 
 ## 🚀 快速开始
 
@@ -41,6 +43,7 @@
 - Node.js 18+ 
 - npm或yarn包管理器
 - 现代浏览器（推荐Chrome、Edge、Safari）
+- OpenRouter API密钥
 
 ### 安装步骤
 
@@ -55,11 +58,20 @@ cd audit-chat
 npm install
 ```
 
-3. **配置环境变量**
-复制`.env.example`为`.env.local`并配置：
-```bash
-OPENAI_API_KEY=your_openai_api_key_here
-```
+3. **⚠️ 重要：配置API密钥**
+   
+   创建 `.env.local` 文件并添加您的API密钥：
+   ```bash
+   # 在项目根目录创建 .env.local 文件
+   NEXT_PUBLIC_OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+   NEXT_PUBLIC_OPENROUTER_API_BASE_URL=https://openrouter.ai/api/v1
+   ```
+   
+   **🔒 安全注意事项：**
+   - `.env.local` 文件已在 `.gitignore` 中，不会被提交到git
+   - 请勿在代码中硬编码API密钥
+   - 请勿将API密钥分享给他人
+   - 定期更换API密钥以确保安全
 
 4. **启动开发服务器**
 ```bash
@@ -68,6 +80,21 @@ npm run dev
 
 5. **访问应用**
 打开浏览器访问：http://localhost:3000
+
+## 🧪 API测试
+
+项目提供了两个测试页面：
+
+1. **安全测试页面**：`test-api-secure.html`
+   - 不包含硬编码API密钥
+   - 需要手动输入API密钥进行测试
+   - 适合安全环境下的测试
+
+2. **原始测试页面**：`test-api.html`（已弃用）
+   - 包含硬编码API密钥，存在安全风险
+   - 仅用于快速测试（请勿在生产环境使用）
+
+**推荐使用安全测试页面进行API功能验证。**
 
 ## 📱 使用指南
 
@@ -101,14 +128,17 @@ npm run dev
 - **错误处理**：完善的权限和错误处理机制
 
 ### AI回复生成
-- **GPT-4集成**：使用OpenAI最新模型
-- **上下文理解**：结合语气强度生成适当回复
+- **DeepSeek V3 Base模型**：使用OpenRouter平台的免费DeepSeek模型
+- **原生Fetch**：采用原生Fetch API代替OpenAI SDK，减少依赖冲突
+- **流式响应**：支持实时显示生成过程
 - **专业术语**：针对审计场景优化的回复模板
+- **环境变量管理**：安全的API密钥存储和管理
 
 ### 性能优化
 - **Server Components**：优先使用服务器组件
 - **客户端缓存**：智能缓存用户输入历史
 - **响应式设计**：适配各种设备屏幕
+- **依赖优化**：移除重型依赖，提升加载速度
 
 ## 📋 项目结构
 
@@ -117,25 +147,39 @@ audit-chat/
 ├── app/                    # Next.js 14 App Router
 │   ├── layout.tsx         # 根布局
 │   ├── page.tsx          # 主页面
+│   ├── voice-test/       # 语音测试页面
 │   └── globals.css       # 全局样式
 ├── components/            # React组件
 │   ├── ui/               # Shadcn/ui基础组件
 │   ├── communication-tool.tsx  # 主要沟通工具
 │   ├── input-form.tsx    # 输入表单组件
 │   ├── response-list.tsx # 回复列表组件
-│   └── voice-commands.tsx # 语音命令面板
+│   └── voice-diagnostics.tsx # 语音诊断组件
 ├── hooks/                # 自定义Hook
 │   ├── use-speech-recognition.ts # 语音识别Hook
 │   ├── use-voice-commands.ts    # 语音命令Hook
 │   └── use-toast.ts      # 消息提示Hook
 ├── lib/                  # 工具库
-│   ├── api.ts           # API接口
+│   ├── api.ts           # API接口（环境变量安全版）
 │   └── utils.ts         # 通用工具函数
+├── .env.local           # 环境变量配置（需自行创建）
+├── test-api-secure.html # 安全的API测试页面
 └── types/               # TypeScript类型定义
     └── index.ts
 ```
 
 ## 🐛 问题排查
+
+### API相关问题
+1. **API密钥错误**
+   - 检查 `.env.local` 文件是否正确配置
+   - 确认API密钥格式：`sk-or-v1-...`
+   - 验证API密钥是否有效且有足够配额
+
+2. **401 认证失败**
+   - API密钥可能已过期或无效
+   - 检查环境变量配置是否正确
+   - 确认项目重启后环境变量已加载
 
 ### 语音功能问题
 1. **无法启动语音识别**
@@ -148,19 +192,36 @@ audit-chat/
    - 检查麦克风设备是否正常
    - 尝试调整说话音量和语速
 
-3. **文字没有添加到输入框**
+3. **AI回复失败**
+   - 检查网络连接是否正常
+   - 确认API服务状态
    - 查看浏览器控制台错误信息
-   - 确认Hook系统正常初始化
-   - 检查React状态更新是否正常
 
 ### 常见错误解决
+- **环境变量未加载**：重启开发服务器
 - **模块找不到**：运行`npm install`重新安装依赖
-- **API调用失败**：检查OpenAI API密钥配置
 - **页面无法加载**：确认Node.js版本满足要求
 
 ## 🔄 更新日志
 
-### v1.2.0 (最新) - 语音功能完善
+### v1.4.0 (最新) - 安全性大幅提升
+- 🔒 **环境变量管理**：使用环境变量存储API密钥，避免硬编码
+- 🔒 **安全测试页面**：创建安全的API测试页面
+- 🔒 **Git安全**：确保敏感信息不会被提交到版本控制
+- 🔧 **错误处理优化**：针对API密钥问题提供详细错误信息
+- 🔧 **文档完善**：详细的安全配置说明
+- 🆕 **DeepSeek V3 Base**：更新为最新的免费模型
+
+### v1.3.0 - 重大修复和优化
+- 🔧 **完全重构API调用系统**：使用原生Fetch API替代OpenAI SDK
+- 🔧 **解决依赖冲突**：修复 `encoding` 模块缺失问题
+- 🔧 **优化错误处理**：提供更详细的错误信息和解决方案
+- 🔧 **移除重型依赖**：减少包体积，提升加载速度
+- 🔧 **完善文件结构**：修复缺失文件，规范项目组织
+- ✅ **流式响应**：保持实时显示AI生成过程
+- ✅ **浏览器兼容性**：确保所有现代浏览器正常运行
+
+### v1.2.0 - 语音功能完善
 - ✅ 修复语音识别Hook系统bug
 - ✅ 优化语音识别实例管理
 - ✅ 完善错误处理和调试日志
@@ -186,6 +247,8 @@ audit-chat/
 ## 🤝 贡献指南
 
 欢迎提交Issue和Pull Request来改进这个项目！
+
+**⚠️ 安全提醒：提交代码时请确保不包含API密钥等敏感信息**
 
 ---
 

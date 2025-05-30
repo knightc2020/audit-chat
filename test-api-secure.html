@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>安全API测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        input[type="password"] {
+            font-family: monospace;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .response {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .loading {
+            color: #007bff;
+            font-style: italic;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            color: #856404;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #b8daff;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 安全的 DeepSeek V3 Base API 测试</h1>
+    
+    <div class="warning">
+        <strong>⚠️ 安全提醒：</strong>
+        <ul>
+            <li>请不要在公共或共享计算机上输入您的API密钥</li>
+            <li>API密钥仅在当前会话中使用，不会被存储或发送到其他地方</li>
+            <li>测试完成后请清除浏览器历史记录</li>
+        </ul>
+    </div>
+
+    <div class="container">
+        <label for="apiKey">OpenRouter API密钥 *:</label>
+        <input type="password" id="apiKey" placeholder="sk-or-v1-..." required>
+        <small>您的新API密钥：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</small>
+    </div>
+    
+    <div class="container">
+        <label for="message">审计对象回应:</label>
+        <textarea id="message" rows="4" placeholder="输入审计对象的回应内容...">我们公司的财务制度都是按照行业惯例执行的，没有什么问题。</textarea>
+    </div>
+    
+    <div class="container">
+        <label for="intensity">沟通强度 (1-10):</label>
+        <input type="number" id="intensity" min="1" max="10" value="5">
+    </div>
+    
+    <div class="container">
+        <button id="testBtn" onclick="testAPI()">🚀 测试API调用</button>
+    </div>
+
+    <div class="info">
+        <strong>📋 环境变量配置说明：</strong>
+        <p>在实际项目中，请创建 <code>.env.local</code> 文件并添加：</p>
+        <pre>NEXT_PUBLIC_OPENROUTER_API_KEY=your_api_key_here
+NEXT_PUBLIC_OPENROUTER_API_BASE_URL=https://openrouter.ai/api/v1</pre>
+    </div>
+    
+    <div class="container">
+        <h3>响应结果:</h3>
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        // 安全的API调用函数，从用户输入获取API密钥
+        async function testAPICall(apiKey, counterpartMessage, intensityLevel) {
+            const API_BASE_URL = "https://openrouter.ai/api/v1";
+            
+            if (!apiKey || !apiKey.startsWith('sk-or-v1-')) {
+                throw new Error('请输入有效的OpenRouter API密钥（应以 sk-or-v1- 开头）');
+            }
+            
+            const intensityDescription = intensityLevel <= 3 ? "温和，注重合作，但不失专业性" :
+                                       intensityLevel <= 6 ? "坚定专业，直接指出问题，语气适中" :
+                                       "强硬专业，直接指出严重问题，语气坚决，不容商榷";
+            
+            const prompt = `你是一位专业的审计专家，具有丰富的审计经验和深厚的法律法规知识。
+
+<任务说明>
+审计对象回应: "${counterpartMessage}"
+沟通强度要求: ${intensityDescription}（强度级别：${intensityLevel}/10）
+
+<输出要求>
+请生成3种不同风格的专业回复，每个回复都要：
+1. 基于具体事实和专业判断指出问题
+2. 引用具体的法律法规、行业标准或最佳实践
+3. 清晰说明不合规可能带来的具体风险
+4. 提供明确、可执行的整改建议
+5. 保持专业、客观的语气，符合指定的沟通强度
+
+<输出格式>
+请严格按照以下格式输出，每个回复之间用"---"分隔：
+
+回复1内容
+---
+回复2内容  
+---
+回复3内容
+
+注意：只输出可以直接使用的回复内容，不要添加编号、标题或其他解释文字。`;
+            
+            const response = await fetch(`${API_BASE_URL}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    'HTTP-Referer': window.location.origin,
+                    'X-Title': 'Audit Communication Tool Secure Test'
+                },
+                body: JSON.stringify({
+                    model: "deepseek/deepseek-v3-base:free",
+                    messages: [
+                        {
+                            role: "user",
+                            content: prompt
+                        }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 2000,
+                    stream: false
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                if (response.status === 401) {
+                    throw new Error('API密钥无效或已过期，请检查您输入的密钥是否正确');
+                } else if (response.status === 429) {
+                    throw new Error('请求过于频繁，请稍后再试');
+                } else if (response.status >= 500) {
+                    throw new Error('服务器内部错误，请稍后再试');
+                } else {
+                    throw new Error(`API请求失败: ${response.status} ${response.statusText}\n${errorText}`);
+                }
+            }
+
+            const data = await response.json();
+            const content = data.choices[0]?.message?.content || '';
+            
+            if (!content.trim()) {
+                throw new Error('未收到有效的AI回复内容');
+            }
+            
+            return content;
+        }
+
+        // 全局函数供HTML调用
+        window.testAPI = async function() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const message = document.getElementById('message').value;
+            const intensity = parseInt(document.getElementById('intensity').value);
+            const resultDiv = document.getElementById('result');
+            const testBtn = document.getElementById('testBtn');
+            
+            if (!apiKey) {
+                alert('请输入您的OpenRouter API密钥');
+                return;
+            }
+            
+            if (!message.trim()) {
+                alert('请输入审计对象回应内容');
+                return;
+            }
+            
+            testBtn.disabled = true;
+            testBtn.textContent = '🔄 正在调用API...';
+            resultDiv.innerHTML = '<div class="loading">正在调用DeepSeek V3 Base API，请稍候...</div>';
+            
+            try {
+                const response = await testAPICall(apiKey, message, intensity);
+                
+                // 解析响应
+                const responses = response.split('---').map(r => r.trim()).filter(r => r);
+                
+                let resultHTML = '<h4>✅ API调用成功！生成的回复：</h4>';
+                responses.forEach((resp, index) => {
+                    resultHTML += `<div class="response"><strong>回复 ${index + 1}:</strong><br>${resp}</div>`;
+                });
+                
+                resultDiv.innerHTML = resultHTML;
+                
+            } catch (error) {
+                console.error('API调用失败:', error);
+                resultDiv.innerHTML = `<div class="response error"><strong>❌ API调用失败:</strong><br>${error.message}</div>`;
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = '🚀 测试API调用';
+            }
+        };
+
+        // 页面加载时的提示
+        window.addEventListener('load', function() {
+            console.log('🔒 安全提醒：请确保您在安全的环境中输入API密钥');
+        });
+    </script>
+</body>
+</html> 
