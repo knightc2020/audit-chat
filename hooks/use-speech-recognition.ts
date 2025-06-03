@@ -115,7 +115,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       // 移动端优化配置
       if (mobile) {
         recognition.continuous = false; // 移动端使用非连续模式
-        recognition.interimResults = true; // 移动端也需要中间结果
+        recognition.interimResults = false; // 移动端关闭中间结果，更稳定
       } else {
         recognition.continuous = continuous;
         recognition.interimResults = true;
@@ -136,7 +136,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
             if (recognitionRef.current) {
               recognitionRef.current.stop();
             }
-          }, 15000); // 增加到15秒超时
+          }, 10000); // 移动端10秒超时
         }
         
         callbacksRef.current.onStart?.();
@@ -167,10 +167,20 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
           }
         }
 
-        // 移动端和桌面端统一处理
-        const currentTranscript = finalTranscript || interimTranscript;
-        const isFinal = hasAnyFinal || !!finalTranscript;
+        // 移动端和桌面端区别处理
+        let currentTranscript = '';
+        let isFinal = false;
         
+        if (mobile) {
+          // 移动端：只处理最终结果
+          currentTranscript = finalTranscript;
+          isFinal = hasAnyFinal;
+        } else {
+          // 桌面端：处理所有结果
+          currentTranscript = finalTranscript || interimTranscript;
+          isFinal = hasAnyFinal || !!finalTranscript;
+        }
+
         console.log('🎤 Hook准备发送结果:', { 
           transcript: currentTranscript, 
           isFinal,
@@ -281,8 +291,37 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       isStartingRef.current = true;
       
       try {
-        // 直接启动，不进行额外的权限检查（权限检查在诊断阶段已完成）
-        recognitionRef.current.start();
+        // 移动端需要特殊处理 - 先请求权限再启动
+        if (isMobile) {
+          navigator.mediaDevices.getUserMedia({ 
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+              sampleRate: 16000
+            } 
+          })
+          .then((stream) => {
+            console.log('✅ 移动端媒体流获取成功');
+            // 立即关闭流，避免占用
+            stream.getTracks().forEach(track => track.stop());
+            
+            // 延迟启动，给浏览器时间准备
+            setTimeout(() => {
+              if (recognitionRef.current && isStartingRef.current) {
+                recognitionRef.current.start();
+              }
+            }, 200);
+          })
+          .catch((error) => {
+            console.error('❌ 移动端媒体流获取失败:', error);
+            isStartingRef.current = false;
+            callbacksRef.current.onError?.('无法获取麦克风权限，请在设置中允许');
+          });
+        } else {
+          // 桌面端直接启动
+          recognitionRef.current.start();
+        }
       } catch (error) {
         console.error('❌ Hook: 启动失败:', error);
         isStartingRef.current = false;

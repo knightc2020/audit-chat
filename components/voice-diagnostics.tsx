@@ -122,7 +122,7 @@ export function VoiceDiagnostics() {
     // 移动端优化配置
     if (diagnostics.isMobile === 'mobile') {
       recognition.continuous = false;
-      recognition.interimResults = true; // 改为true，获取中间结果
+      recognition.interimResults = false; // 移动端关闭中间结果
       recognition.maxAlternatives = 1;
     } else {
       recognition.continuous = false;
@@ -140,7 +140,7 @@ export function VoiceDiagnostics() {
         setTestResult('⏰ 测试超时，请确保说话声音足够大且环境安静');
         setIsTestRunning(false);
       }
-    }, 15000); // 增加到15秒
+    }, diagnostics.isMobile === 'mobile' ? 10000 : 15000); // 移动端10秒，桌面端15秒
 
     recognition.onstart = () => {
       console.log('🎤 语音识别测试开始');
@@ -169,14 +169,26 @@ export function VoiceDiagnostics() {
       
       console.log(`识别结果 ${resultCount}: "${transcript}", isFinal: ${isFinal}, 置信度: ${confidence}`);
       
-      if (transcript.trim()) {
-        setTestResult(
-          `✅ 识别${isFinal ? '成功' : '中...'}：「${transcript}」 (置信度: ${Math.round(confidence * 100)}%)`
-        );
-        
-        // 如果是最终结果，结束测试
-        if (isFinal) {
+      // 移动端和桌面端区别处理
+      if (diagnostics.isMobile === 'mobile') {
+        // 移动端：只处理最终结果
+        if (isFinal && transcript.trim()) {
+          setTestResult(
+            `✅ 识别成功：「${transcript}」 (置信度: ${Math.round(confidence * 100)}%)`
+          );
           setIsTestRunning(false);
+        }
+      } else {
+        // 桌面端：显示所有结果
+        if (transcript.trim()) {
+          setTestResult(
+            `✅ 识别${isFinal ? '成功' : '中...'}：「${transcript}」 (置信度: ${Math.round(confidence * 100)}%)`
+          );
+          
+          // 如果是最终结果，结束测试
+          if (isFinal) {
+            setIsTestRunning(false);
+          }
         }
       }
     };
@@ -185,25 +197,54 @@ export function VoiceDiagnostics() {
       console.error('❌ 语音识别测试错误:', event.error, event);
       clearTimeout(timeout);
       let errorMsg = '';
-      switch (event.error) {
-        case 'no-speech':
-          errorMsg = '❌ 未检测到语音，请重试（确保环境安静，说话清晰）';
-          break;
-        case 'not-allowed':
-          errorMsg = '❌ 权限被拒绝，请允许麦克风访问后重试';
-          break;
-        case 'network':
-          errorMsg = '❌ 网络错误，请检查网络连接';
-          break;
-        case 'audio-capture':
-          errorMsg = '❌ 音频捕获失败，请检查麦克风设备';
-          break;
-        case 'service-not-allowed':
-          errorMsg = '❌ 语音服务不可用';
-          break;
-        default:
-          errorMsg = `❌ 识别失败: ${event.error}`;
+      
+      if (diagnostics.isMobile === 'mobile') {
+        // 移动端专用错误处理
+        switch (event.error) {
+          case 'no-speech':
+            errorMsg = '❌ 未检测到语音，移动端请：1)靠近麦克风说话 2)音量调大 3)确保环境安静';
+            break;
+          case 'not-allowed':
+            errorMsg = '❌ 权限被拒绝，请：1)刷新页面 2)在地址栏点击锁形图标 3)允许麦克风权限';
+            break;
+          case 'network':
+            errorMsg = '❌ 网络错误，请检查网络连接是否稳定';
+            break;
+          case 'audio-capture':
+            errorMsg = '❌ 音频捕获失败，请：1)检查麦克风是否被其他应用占用 2)重启浏览器';
+            break;
+          case 'service-not-allowed':
+            errorMsg = '❌ 语音服务不可用，请使用Chrome或Safari最新版';
+            break;
+          case 'aborted':
+            errorMsg = '⏹️ 识别被中止';
+            break;
+          default:
+            errorMsg = `❌ 识别失败: ${event.error}，请重试或使用桌面端`;
+        }
+      } else {
+        // 桌面端错误处理
+        switch (event.error) {
+          case 'no-speech':
+            errorMsg = '❌ 未检测到语音，请重试（确保环境安静，说话清晰）';
+            break;
+          case 'not-allowed':
+            errorMsg = '❌ 权限被拒绝，请允许麦克风访问后重试';
+            break;
+          case 'network':
+            errorMsg = '❌ 网络错误，请检查网络连接';
+            break;
+          case 'audio-capture':
+            errorMsg = '❌ 音频捕获失败，请检查麦克风设备';
+            break;
+          case 'service-not-allowed':
+            errorMsg = '❌ 语音服务不可用';
+            break;
+          default:
+            errorMsg = `❌ 识别失败: ${event.error}`;
+        }
       }
+      
       setTestResult(errorMsg);
       setIsTestRunning(false);
     };
