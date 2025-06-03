@@ -115,7 +115,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       // 移动端优化配置
       if (mobile) {
         recognition.continuous = false; // 移动端使用非连续模式
-        recognition.interimResults = false; // 移动端关闭中间结果
+        recognition.interimResults = true; // 移动端也需要中间结果
       } else {
         recognition.continuous = continuous;
         recognition.interimResults = true;
@@ -133,10 +133,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
         if (mobile) {
           timeoutRef.current = setTimeout(() => {
             console.log('⏰ 移动端超时，自动停止');
-            if (recognitionRef.current && isListening) {
+            if (recognitionRef.current) {
               recognitionRef.current.stop();
             }
-          }, 10000); // 10秒超时
+          }, 15000); // 增加到15秒超时
         }
         
         callbacksRef.current.onStart?.();
@@ -167,9 +167,9 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
           }
         }
 
-        // 移动端优先处理最终结果
-        const currentTranscript = mobile ? (finalTranscript || interimTranscript) : (finalTranscript || interimTranscript);
-        const isFinal = mobile ? true : (hasAnyFinal || !!finalTranscript);
+        // 移动端和桌面端统一处理
+        const currentTranscript = finalTranscript || interimTranscript;
+        const isFinal = hasAnyFinal || !!finalTranscript;
         
         console.log('🎤 Hook准备发送结果:', { 
           transcript: currentTranscript, 
@@ -192,7 +192,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('❌ Hook: 语音识别错误:', event.error);
+        console.error('❌ Hook: 语音识别错误:', event.error, event);
         
         // 清除超时定时器
         if (timeoutRef.current) {
@@ -204,15 +204,13 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
         
         switch (event.error) {
           case 'no-speech':
-            errorMessage = mobile ? '未检测到语音，请重试（移动端需要连续说话）' : '未检测到语音，请重试';
+            errorMessage = mobile ? '未检测到语音，请大声说话并重试' : '未检测到语音，请重试';
             break;
           case 'audio-capture':
             errorMessage = '无法访问麦克风，请检查权限';
             break;
           case 'not-allowed':
-            errorMessage = mobile 
-              ? '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问，然后刷新页面' 
-              : '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问';
+            errorMessage = '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问';
             break;
           case 'network':
             errorMessage = '网络错误，请检查网络连接';
@@ -283,25 +281,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       isStartingRef.current = true;
       
       try {
-        // 移动端需要额外的权限检查
-        if (isMobile) {
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(() => {
-              console.log('✅ 移动端麦克风权限已获取');
-              recognitionRef.current?.start();
-            })
-            .catch((error) => {
-              console.error('❌ 移动端麦克风权限获取失败:', error);
-              isStartingRef.current = false;
-              callbacksRef.current.onError?.('无法获取麦克风权限，请在设置中允许');
-            });
-        } else {
-          recognitionRef.current.start();
-        }
+        // 直接启动，不进行额外的权限检查（权限检查在诊断阶段已完成）
+        recognitionRef.current.start();
       } catch (error) {
         console.error('❌ Hook: 启动失败:', error);
         isStartingRef.current = false;
-        callbacksRef.current.onError?.('启动语音识别失败');
+        callbacksRef.current.onError?.('启动语音识别失败: ' + error);
       }
     } else {
       console.warn('⚠️ Hook: 无法启动 - recognition存在:', !!recognitionRef.current, ', 正在监听:', isListening);

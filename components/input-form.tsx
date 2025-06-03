@@ -29,121 +29,65 @@ export function InputForm({
   isLoading
 }: InputFormProps) {
   const { toast } = useToast();
-  const [isRecognizing, setIsRecognizing] = useState(false);
-  const [currentTranscript, setCurrentTranscript] = useState('');
   const recognitionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 语音合成相关
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speechSynthesisRef = useRef<SpeechSynthesis | null>(null);
 
-  // 初始化语音合成
+  // 首先初始化语音合成
   useEffect(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       speechSynthesisRef.current = window.speechSynthesis;
     }
   }, []);
 
+  // 然后初始化语音识别
   const {
     isListening,
-    isSupported,
-    transcript,
     startListening,
     stopListening,
-    resetTranscript,
+    transcript,
+    isSupported: speechSupported,
     isMobile
   } = useSpeechRecognition({
     onResult: (result) => {
-      console.log('🎤 语音识别结果:', result);
-      setCurrentTranscript(result.transcript);
+      console.log('📝 InputForm收到语音结果:', result);
       
-      // 处理最终结果
-      if (result.isFinal && result.transcript.trim()) {
-        console.log('✅ 最终结果，立即添加到输入框:', result.transcript);
-        const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
-        setCounterpartMessage(newMessage);
-        setCurrentTranscript('');
+      if (result.transcript && result.transcript.trim()) {
+        // 直接处理结果，不区分移动端和桌面端
+        setCounterpartMessage(result.transcript.trim());
         
-        // 清除超时定时器
-        if (recognitionTimeoutRef.current) {
-          clearTimeout(recognitionTimeoutRef.current);
-          recognitionTimeoutRef.current = null;
-        }
-      } 
-      // 处理中间结果 - 设置延迟添加（仅桌面端）
-      else if (!result.isFinal && result.transcript.trim().length > 2) {
-        console.log('⏳ 中间结果，设置延迟添加:', result.transcript);
-        
-        // 清除之前的定时器
-        if (recognitionTimeoutRef.current) {
-          clearTimeout(recognitionTimeoutRef.current);
-        }
-        
-        // 设置新的定时器
-        recognitionTimeoutRef.current = setTimeout(() => {
-          console.log('⏰ 延迟时间到，添加中间结果到输入框:', result.transcript);
-          const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + result.transcript.trim();
-          setCounterpartMessage(newMessage);
-          setCurrentTranscript('');
-          
-          // 停止识别
+        // 如果是最终结果，停止识别
+        if (result.isFinal) {
           stopListening();
-          setIsRecognizing(false);
-        }, 2000);
+        }
       }
     },
     onError: (error) => {
       console.error('❌ 语音识别错误:', error);
       toast({
-        title: "语音识别出错",
+        title: "语音识别错误",
         description: error,
         variant: "destructive",
       });
-      setIsRecognizing(false);
-      setCurrentTranscript('');
-      
-      // 清除定时器
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-        recognitionTimeoutRef.current = null;
-      }
     },
     onStart: () => {
-      console.log('🎬 语音识别开始');
-      setIsRecognizing(true);
+      console.log('🎤 语音识别开始');
       toast({
-        title: "开始语音识别",
-        description: "请说话，停顿2秒后将自动添加到输入框",
+        title: "开始语音输入",
+        description: "请大声说话，系统会自动识别",
       });
     },
     onEnd: () => {
-      console.log('🏁 语音识别结束');
-      setIsRecognizing(false);
-      
-      // 如果还有未处理的文字，立即添加到输入框
-      if (currentTranscript && currentTranscript.trim()) {
-        console.log('🔚 识别结束时添加剩余文字:', currentTranscript);
-        const newMessage = counterpartMessage + (counterpartMessage ? ' ' : '') + currentTranscript.trim();
-        setCounterpartMessage(newMessage);
-        setCurrentTranscript('');
-      }
-      
-      // 清除定时器
+      console.log('🎤 语音识别结束');
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
-        recognitionTimeoutRef.current = null;
       }
     },
-    continuous: true,
+    continuous: false, // 统一使用非连续模式
     language: 'zh-CN'
   });
-
-  // 移动端特殊处理逻辑 - 动态更新回调函数的行为
-  useEffect(() => {
-    if (isMobile) {
-      console.log('📱 检测到移动设备，启用移动端优化模式');
-    }
-  }, [isMobile]);
 
   // 清理定时器
   useEffect(() => {
@@ -155,7 +99,7 @@ export function InputForm({
   }, []);
 
   const handleVoiceInput = () => {
-    if (!isSupported) {
+    if (!speechSupported) {
       toast({
         title: "不支持语音识别",
         description: isMobile 
@@ -169,7 +113,6 @@ export function InputForm({
     if (isListening) {
       console.log('🛑 手动停止语音识别');
       stopListening();
-      setIsRecognizing(false);
       
       // 清除定时器
       if (recognitionTimeoutRef.current) {
@@ -178,18 +121,14 @@ export function InputForm({
       }
     } else {
       console.log('▶️ 开始语音识别 - 移动设备:', isMobile);
-      resetTranscript();
-      setCurrentTranscript('');
       startListening();
     }
   };
 
   const handleClearInput = () => {
     setCounterpartMessage('');
-    setCurrentTranscript('');
     if (isListening) {
       stopListening();
-      setIsRecognizing(false);
     }
     
     // 清除定时器
@@ -216,7 +155,7 @@ export function InputForm({
       return;
     }
 
-    const textToSpeak = counterpartMessage || currentTranscript;
+    const textToSpeak = counterpartMessage || transcript;
     if (!textToSpeak.trim()) {
       toast({
         title: "没有内容",
@@ -246,7 +185,7 @@ export function InputForm({
   };
 
   // 显示的文本内容
-  const displayText = counterpartMessage + (currentTranscript ? (counterpartMessage ? ' ' : '') + currentTranscript : '');
+  const displayText = counterpartMessage + (transcript ? (counterpartMessage ? ' ' : '') + transcript : '');
 
   return (
     <div className="space-y-6">
@@ -271,7 +210,7 @@ export function InputForm({
               variant="outline"
               size="sm"
               onClick={handleSpeakText}
-              disabled={(!counterpartMessage && !currentTranscript) || isLoading}
+              disabled={(!counterpartMessage && !transcript) || isLoading}
               className={cn(
                 "flex items-center gap-1",
                 isSpeaking && "bg-blue-50 border-blue-300"
@@ -285,7 +224,7 @@ export function InputForm({
               variant="outline"
               size="sm"
               onClick={handleClearInput}
-              disabled={!counterpartMessage && !currentTranscript}
+              disabled={!counterpartMessage && !transcript}
               className="flex items-center gap-1"
             >
               <Trash2 className="h-3 w-3" />
@@ -301,8 +240,8 @@ export function InputForm({
             placeholder="请输入对方所说的内容，或点击麦克风使用语音输入..."
             className={cn(
               "mt-2 min-h-[120px] pr-12",
-              isRecognizing && "border-blue-300 bg-blue-50/50",
-              currentTranscript && "text-blue-600"
+              isListening && "border-blue-300 bg-blue-50/50",
+              transcript && "text-blue-600"
             )}
             value={displayText}
             onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCounterpartMessage(e.target.value)}
@@ -318,7 +257,7 @@ export function InputForm({
             className={cn(
               "absolute right-2 top-4 h-8 w-8 p-0",
               isListening && "bg-red-100 hover:bg-red-200 text-red-600",
-              !isSupported && "opacity-50 cursor-not-allowed"
+              !speechSupported && "opacity-50 cursor-not-allowed"
             )}
             title={isListening ? "停止语音输入" : "开始语音输入"}
           >
@@ -331,20 +270,20 @@ export function InputForm({
         </div>
         
         {/* 语音识别状态提示 */}
-        {isRecognizing && (
+        {isListening && (
           <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
             {isMobile ? '正在识别语音...（移动端模式）' : '正在识别语音...'}
-            {currentTranscript && (
+            {transcript && (
               <span className="text-gray-600 font-medium">
-                识别中: "{currentTranscript}"
+                识别中: "{transcript}"
               </span>
             )}
           </div>
         )}
         
         {/* 浏览器不支持提示 */}
-        {!isSupported && (
+        {!speechSupported && (
           <div className="mt-2 text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
             💡 您的浏览器不支持语音识别功能，推荐使用Chrome、Edge或Safari浏览器以获得最佳体验
             {isMobile && '（移动端请使用最新版本）'}
@@ -382,7 +321,7 @@ export function InputForm({
 
         <Button 
           onClick={onSubmit} 
-          disabled={isLoading || (!counterpartMessage.trim() && !currentTranscript.trim())} 
+          disabled={isLoading || (!counterpartMessage.trim() && !transcript.trim())} 
           className="w-full"
         >
           {isLoading ? '生成中...' : '开始沟通'}

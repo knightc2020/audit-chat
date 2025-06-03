@@ -84,9 +84,7 @@ export function VoiceDiagnostics() {
   };
 
   const testSpeechRecognition = async () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
+    if (!diagnostics.speechRecognition || diagnostics.speechRecognition !== 'supported') {
       setTestResult('❌ 浏览器不支持语音识别');
       return;
     }
@@ -94,12 +92,24 @@ export function VoiceDiagnostics() {
     setIsTestRunning(true);
     setTestResult('🎤 准备开始测试...');
 
-    // 移动端先请求权限
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    // 移动端先请求权限并进行额外检查
     if (diagnostics.isMobile === 'mobile') {
       try {
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          } 
+        });
+        console.log('✅ 移动端麦克风权限和媒体流获取成功');
         setTestResult('✅ 权限获取成功，开始语音测试...');
+        // 关闭媒体流，避免占用
+        stream.getTracks().forEach(track => track.stop());
       } catch (error) {
+        console.error('❌ 移动端权限获取失败:', error);
         setTestResult('❌ 权限获取失败，请手动允许麦克风权限');
         setIsTestRunning(false);
         return;
@@ -112,47 +122,84 @@ export function VoiceDiagnostics() {
     // 移动端优化配置
     if (diagnostics.isMobile === 'mobile') {
       recognition.continuous = false;
-      recognition.interimResults = false;
+      recognition.interimResults = true; // 改为true，获取中间结果
+      recognition.maxAlternatives = 1;
     } else {
       recognition.continuous = false;
       recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
     }
 
     let hasResult = false;
+    let resultCount = 0;
     
     const timeout = setTimeout(() => {
       if (!hasResult) {
+        console.log('⏰ 测试超时');
         recognition.stop();
-        setTestResult('⏰ 测试超时，请确保说话声音足够大');
+        setTestResult('⏰ 测试超时，请确保说话声音足够大且环境安静');
         setIsTestRunning(false);
       }
-    }, 10000);
+    }, 15000); // 增加到15秒
 
     recognition.onstart = () => {
-      setTestResult('🎤 正在监听...请说话（如"你好测试"）');
+      console.log('🎤 语音识别测试开始');
+      setTestResult('🎤 正在监听...请说话（如"你好测试"或"今天天气不错"）');
     };
 
     recognition.onresult = (event) => {
+      console.log('🎯 收到识别结果:', event.results);
+      resultCount++;
       hasResult = true;
       clearTimeout(timeout);
-      const transcript = event.results[0][0].transcript;
-      const confidence = event.results[0][0].confidence;
-      setTestResult(`✅ 识别成功: "${transcript}" (置信度: ${Math.round(confidence * 100)}%)`);
-      setIsTestRunning(false);
+      
+      let transcript = '';
+      let confidence = 0;
+      let isFinal = false;
+      
+      // 获取最新的结果
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        transcript += result[0].transcript;
+        confidence = Math.max(confidence, result[0].confidence || 0);
+        if (result.isFinal) {
+          isFinal = true;
+        }
+      }
+      
+      console.log(`识别结果 ${resultCount}: "${transcript}", isFinal: ${isFinal}, 置信度: ${confidence}`);
+      
+      if (transcript.trim()) {
+        setTestResult(
+          `✅ 识别${isFinal ? '成功' : '中...'}：「${transcript}」 (置信度: ${Math.round(confidence * 100)}%)`
+        );
+        
+        // 如果是最终结果，结束测试
+        if (isFinal) {
+          setIsTestRunning(false);
+        }
+      }
     };
 
     recognition.onerror = (event) => {
+      console.error('❌ 语音识别测试错误:', event.error, event);
       clearTimeout(timeout);
       let errorMsg = '';
       switch (event.error) {
         case 'no-speech':
-          errorMsg = '❌ 未检测到语音，请重试';
+          errorMsg = '❌ 未检测到语音，请重试（确保环境安静，说话清晰）';
           break;
         case 'not-allowed':
-          errorMsg = '❌ 权限被拒绝，请允许麦克风访问';
+          errorMsg = '❌ 权限被拒绝，请允许麦克风访问后重试';
           break;
         case 'network':
-          errorMsg = '❌ 网络错误';
+          errorMsg = '❌ 网络错误，请检查网络连接';
+          break;
+        case 'audio-capture':
+          errorMsg = '❌ 音频捕获失败，请检查麦克风设备';
+          break;
+        case 'service-not-allowed':
+          errorMsg = '❌ 语音服务不可用';
           break;
         default:
           errorMsg = `❌ 识别失败: ${event.error}`;
@@ -162,16 +209,19 @@ export function VoiceDiagnostics() {
     };
 
     recognition.onend = () => {
+      console.log('🏁 语音识别测试结束，hasResult:', hasResult);
       clearTimeout(timeout);
-      if (!hasResult && !testResult.includes('成功')) {
-        setTestResult('⏹️ 识别结束，未获得结果');
+      if (!hasResult) {
+        setTestResult('⏹️ 识别结束，未获得结果（请检查麦克风是否工作正常）');
       }
       setIsTestRunning(false);
     };
 
     try {
+      console.log('🚀 启动语音识别测试');
       recognition.start();
     } catch (error) {
+      console.error('❌ 启动语音识别失败:', error);
       clearTimeout(timeout);
       setTestResult(`❌ 启动失败: ${error}`);
       setIsTestRunning(false);
