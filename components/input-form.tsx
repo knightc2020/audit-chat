@@ -4,7 +4,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
-import { Send, Mic, MicOff, Trash2, Volume2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Send, Mic, MicOff, Trash2, Volume2, Smartphone } from 'lucide-react';
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useRef, useEffect } from 'react';
@@ -49,7 +50,8 @@ export function InputForm({
     transcript,
     startListening,
     stopListening,
-    resetTranscript
+    resetTranscript,
+    isMobile
   } = useSpeechRecognition({
     onResult: (result) => {
       console.log('🎤 语音识别结果:', result);
@@ -68,7 +70,7 @@ export function InputForm({
           recognitionTimeoutRef.current = null;
         }
       } 
-      // 处理中间结果 - 设置延迟添加
+      // 处理中间结果 - 设置延迟添加（仅桌面端）
       else if (!result.isFinal && result.transcript.trim().length > 2) {
         console.log('⏳ 中间结果，设置延迟添加:', result.transcript);
         
@@ -87,7 +89,7 @@ export function InputForm({
           // 停止识别
           stopListening();
           setIsRecognizing(false);
-        }, 2000); // 增加到2秒
+        }, 2000);
       }
     },
     onError: (error) => {
@@ -136,6 +138,13 @@ export function InputForm({
     language: 'zh-CN'
   });
 
+  // 移动端特殊处理逻辑 - 动态更新回调函数的行为
+  useEffect(() => {
+    if (isMobile) {
+      console.log('📱 检测到移动设备，启用移动端优化模式');
+    }
+  }, [isMobile]);
+
   // 清理定时器
   useEffect(() => {
     return () => {
@@ -149,7 +158,9 @@ export function InputForm({
     if (!isSupported) {
       toast({
         title: "不支持语音识别",
-        description: "您的浏览器不支持语音识别功能，请使用Chrome、Edge或Safari浏览器",
+        description: isMobile 
+          ? "您的移动设备不支持语音识别功能，请使用Chrome或Safari最新版" 
+          : "您的浏览器不支持语音识别功能，请使用Chrome、Edge或Safari浏览器",
         variant: "destructive",
       });
       return;
@@ -166,7 +177,7 @@ export function InputForm({
         recognitionTimeoutRef.current = null;
       }
     } else {
-      console.log('▶️ 开始语音识别');
+      console.log('▶️ 开始语音识别 - 移动设备:', isMobile);
       resetTranscript();
       setCurrentTranscript('');
       startListening();
@@ -239,6 +250,16 @@ export function InputForm({
 
   return (
     <div className="space-y-6">
+      {/* 移动端使用提示 */}
+      {isMobile && (
+        <Alert className="border-blue-200 bg-blue-50">
+          <Smartphone className="h-4 w-4" />
+          <AlertDescription>
+            <strong>移动端使用提示：</strong>语音识别将在您停止说话后自动结束，每次只能识别一句话。请在安静环境中使用，说话声音要足够大。
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div>
         <div className="flex justify-between items-center mb-2">
           <Label htmlFor="counterpart-message" className="text-base font-medium">
@@ -313,7 +334,7 @@ export function InputForm({
         {isRecognizing && (
           <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-            正在识别语音...
+            {isMobile ? '正在识别语音...（移动端模式）' : '正在识别语音...'}
             {currentTranscript && (
               <span className="text-gray-600 font-medium">
                 识别中: "{currentTranscript}"
@@ -326,6 +347,7 @@ export function InputForm({
         {!isSupported && (
           <div className="mt-2 text-sm text-yellow-600 bg-yellow-50 p-2 rounded">
             💡 您的浏览器不支持语音识别功能，推荐使用Chrome、Edge或Safari浏览器以获得最佳体验
+            {isMobile && '（移动端请使用最新版本）'}
           </div>
         )}
       </div>

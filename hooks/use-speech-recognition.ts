@@ -68,6 +68,12 @@ interface SpeechRecognitionAlternative {
   confidence: number;
 }
 
+// 检测是否为移动设备
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
   const {
     continuous = true,
@@ -77,7 +83,11 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
   const [isListening, setIsListening] = React.useState(false);
   const [isSupported, setIsSupported] = React.useState(false);
   const [transcript, setTranscript] = React.useState('');
+  const [isMobile, setIsMobile] = React.useState(false);
+  
   const recognitionRef = React.useRef<SpeechRecognition | null>(null);
+  const isStartingRef = React.useRef(false);
+  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   
   // 使用useRef保存回调函数，避免依赖数组问题
   const callbacksRef = React.useRef(options);
@@ -87,9 +97,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     callbacksRef.current = options;
   }, [options.onResult, options.onError, options.onStart, options.onEnd]);
 
-  // 检查浏览器支持并初始化（只在mount时执行一次）
+  // 检查设备类型和浏览器支持
   React.useEffect(() => {
-    console.log('🔧 初始化语音识别Hook');
+    const mobile = isMobileDevice();
+    setIsMobile(mobile);
+    
+    console.log('🔧 初始化语音识别Hook - 移动设备:', mobile);
     
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     setIsSupported(!!SpeechRecognition);
@@ -98,19 +111,45 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       console.log('🎯 创建语音识别实例');
       
       const recognition = new SpeechRecognition();
-      recognition.continuous = continuous;
-      recognition.interimResults = true;
+      
+      // 移动端优化配置
+      if (mobile) {
+        recognition.continuous = false; // 移动端使用非连续模式
+        recognition.interimResults = false; // 移动端关闭中间结果
+      } else {
+        recognition.continuous = continuous;
+        recognition.interimResults = true;
+      }
+      
       recognition.lang = language;
       recognition.maxAlternatives = 1;
 
       recognition.onstart = () => {
         console.log('🎬 Hook: 语音识别开始');
         setIsListening(true);
+        isStartingRef.current = false;
+        
+        // 移动端超时保护
+        if (mobile) {
+          timeoutRef.current = setTimeout(() => {
+            console.log('⏰ 移动端超时，自动停止');
+            if (recognitionRef.current && isListening) {
+              recognitionRef.current.stop();
+            }
+          }, 10000); // 10秒超时
+        }
+        
         callbacksRef.current.onStart?.();
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         console.log('🎯 Hook收到语音识别结果，results长度:', event.results.length);
+        
+        // 清除超时定时器
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
         
         let finalTranscript = '';
         let interimTranscript = '';
@@ -128,15 +167,16 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
           }
         }
 
-        // 优先使用最终结果，如果没有则使用中间结果
-        const currentTranscript = finalTranscript || interimTranscript;
-        const isFinal = hasAnyFinal || !!finalTranscript;
+        // 移动端优先处理最终结果
+        const currentTranscript = mobile ? (finalTranscript || interimTranscript) : (finalTranscript || interimTranscript);
+        const isFinal = mobile ? true : (hasAnyFinal || !!finalTranscript);
         
         console.log('🎤 Hook准备发送结果:', { 
           transcript: currentTranscript, 
           isFinal,
           finalTranscript,
-          interimTranscript 
+          interimTranscript,
+          isMobile: mobile
         });
 
         setTranscript(currentTranscript);
@@ -153,17 +193,26 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('❌ Hook: 语音识别错误:', event.error);
+        
+        // 清除超时定时器
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        
         let errorMessage = '语音识别出错';
         
         switch (event.error) {
           case 'no-speech':
-            errorMessage = '未检测到语音，请重试';
+            errorMessage = mobile ? '未检测到语音，请重试（移动端需要连续说话）' : '未检测到语音，请重试';
             break;
           case 'audio-capture':
             errorMessage = '无法访问麦克风，请检查权限';
             break;
           case 'not-allowed':
-            errorMessage = '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问';
+            errorMessage = mobile 
+              ? '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问，然后刷新页面' 
+              : '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问';
             break;
           case 'network':
             errorMessage = '网络错误，请检查网络连接';
@@ -171,33 +220,51 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
           case 'service-not-allowed':
             errorMessage = '语音服务不可用';
             break;
+          case 'aborted':
+            // 主动停止时不报错
+            console.log('语音识别被主动停止');
+            setIsListening(false);
+            isStartingRef.current = false;
+            return;
         }
         
         callbacksRef.current.onError?.(errorMessage);
         setIsListening(false);
+        isStartingRef.current = false;
       };
 
       recognition.onend = () => {
         console.log('🏁 Hook: 语音识别结束');
+        
+        // 清除超时定时器
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        
         setIsListening(false);
+        isStartingRef.current = false;
         callbacksRef.current.onEnd?.();
       };
 
       recognitionRef.current = recognition;
-      console.log('✅ 语音识别实例创建完成');
+      console.log('✅ 语音识别实例创建完成 - 移动端模式:', mobile);
     }
 
     return () => {
       console.log('🧹 清理语音识别实例');
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
       if (recognitionRef.current) {
         recognitionRef.current.abort();
         recognitionRef.current = null;
       }
     };
-  }, [continuous, language]); // 只依赖静态配置
+  }, [continuous, language]);
 
   const startListening = React.useCallback(() => {
-    console.log('▶️ Hook: 尝试开始监听');
+    console.log('▶️ Hook: 尝试开始监听 - 移动设备:', isMobile);
     
     if (!isSupported) {
       console.error('❌ Hook: 浏览器不支持');
@@ -205,32 +272,69 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       return;
     }
 
+    if (isStartingRef.current) {
+      console.warn('⚠️ 正在启动中，请稍等');
+      return;
+    }
+
     if (recognitionRef.current && !isListening) {
       console.log('🎙️ Hook: 启动语音识别');
       setTranscript('');
+      isStartingRef.current = true;
+      
       try {
-        recognitionRef.current.start();
+        // 移动端需要额外的权限检查
+        if (isMobile) {
+          navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(() => {
+              console.log('✅ 移动端麦克风权限已获取');
+              recognitionRef.current?.start();
+            })
+            .catch((error) => {
+              console.error('❌ 移动端麦克风权限获取失败:', error);
+              isStartingRef.current = false;
+              callbacksRef.current.onError?.('无法获取麦克风权限，请在设置中允许');
+            });
+        } else {
+          recognitionRef.current.start();
+        }
       } catch (error) {
         console.error('❌ Hook: 启动失败:', error);
+        isStartingRef.current = false;
         callbacksRef.current.onError?.('启动语音识别失败');
       }
     } else {
       console.warn('⚠️ Hook: 无法启动 - recognition存在:', !!recognitionRef.current, ', 正在监听:', isListening);
     }
-  }, [isSupported, isListening]);
+  }, [isSupported, isListening, isMobile]);
 
   const stopListening = React.useCallback(() => {
     console.log('🛑 Hook: 停止监听');
-    if (recognitionRef.current && isListening) {
+    
+    // 清除超时定时器
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    if (recognitionRef.current && (isListening || isStartingRef.current)) {
       recognitionRef.current.stop();
     }
   }, [isListening]);
 
   const abortListening = React.useCallback(() => {
     console.log('💥 Hook: 中止监听');
+    
+    // 清除超时定时器
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
     if (recognitionRef.current) {
       recognitionRef.current.abort();
       setIsListening(false);
+      isStartingRef.current = false;
     }
   }, []);
 
@@ -246,6 +350,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     startListening,
     stopListening,
     abortListening,
-    resetTranscript
+    resetTranscript,
+    isMobile
   };
 } 
