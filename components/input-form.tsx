@@ -98,13 +98,50 @@ export function InputForm({
     };
   }, []);
 
+  // 权限检查函数
+  const checkPermission = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast({
+        title: "浏览器不支持",
+        description: "您的浏览器不支持媒体设备访问，请更新浏览器",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      toast({
+        title: "权限检查通过",
+        description: "麦克风权限正常，可以开始语音输入",
+        variant: "default",
+      });
+    } catch (error: any) {
+      console.error('权限检查失败:', error);
+      let msg = '';
+      if (error.name === 'NotAllowedError') {
+        msg = '麦克风权限被拒绝，请在浏览器地址栏左侧点击🔒或🎤图标允许访问';
+      } else if (error.name === 'NotFoundError') {
+        msg = '未检测到麦克风设备，请检查设备连接';
+      } else {
+        msg = `权限检查失败: ${error.message}`;
+      }
+      toast({
+        title: "权限检查失败",
+        description: msg,
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleVoiceInput = () => {
     if (!speechSupported) {
       toast({
         title: "不支持语音识别",
-        description: isMobile 
-          ? "您的移动设备不支持语音识别功能，请使用Chrome或Safari最新版" 
-          : "您的浏览器不支持语音识别功能，请使用Chrome、Edge或Safari浏览器",
+        description: isMobile
+          ? `您的移动设备不支持语音识别功能。\n推荐浏览器：\n1. iOS Safari 14.5+\n2. Android Chrome 25+\n3. 移动端Edge`
+          : `您的浏览器不支持语音识别功能。\n推荐浏览器：\n1. Chrome 25+\n2. Edge 79+\n3. Safari 14.1+\n\n提示：语音识别需要HTTPS环境或localhost`,
         variant: "destructive",
       });
       return;
@@ -113,7 +150,7 @@ export function InputForm({
     if (isListening) {
       console.log('🛑 手动停止语音识别');
       stopListening();
-      
+
       // 清除定时器
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
@@ -197,6 +234,41 @@ export function InputForm({
             <strong>移动端使用提示：</strong>语音识别将在您停止说话后自动结束，每次只能识别一句话。请在安静环境中使用，说话声音要足够大。
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* 浏览器和权限检查提示 */}
+      {!isMobile && speechSupported && (
+        <Alert className="border-green-200 bg-green-50">
+          <AlertDescription>
+            <strong>语音识别已就绪：</strong>推荐在安静环境中使用，说话声音清晰，距离麦克风10-30cm。
+            {isMobile ? '' : '首次使用需允许麦克风权限'}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="p-0 h-auto ml-2 text-green-700 underline"
+              onClick={checkPermission}
+            >
+              [检查权限]
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* 语音诊断工具入口 */}
+      {speechSupported && (
+        <div className="text-sm text-gray-500">
+          💡 语音功能异常？
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="p-0 h-auto ml-1 text-blue-600 underline"
+            onClick={() => window.location.href = '/voice-test'}
+          >
+            前往语音诊断工具
+          </Button>
+        </div>
       )}
 
       <div>

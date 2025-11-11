@@ -10,13 +10,11 @@ if (!API_KEY) {
 }
 
 // 定义可用的免费模型列表，按优先级排序
+// 这些模型经过验证，确保在OpenRouter上可用
 const FREE_MODELS = [
-  "deepseek/deepseek-v3-base:free",
-  "microsoft/phi-3-medium-4k-instruct:free", 
-  "google/gemma-2-9b-it:free",
-  "meta-llama/llama-3.1-8b-instruct:free",
-  "gryphe/mythomist-7b:free",
-  "mistralai/mistral-7b-instruct:free"
+  "kwaipilot/kat-coder-pro:free",        // Kwaipilot Kat Coder (可靠)
+  "minimax/minimax-m2:free",             // MiniMax M2 (高效推理)
+  "nvidia/nemotron-nano-12b-v2-vl:free"  // NVIDIA Nemotron Nano (多模态)
 ];
 
 // 主导出函数 - 优先尝试流式调用，失败时使用非流式调用

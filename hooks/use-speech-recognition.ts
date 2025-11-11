@@ -203,30 +203,39 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('❌ Hook: 语音识别错误:', event.error, event);
-        
+
         // 清除超时定时器
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
-        
+
         let errorMessage = '语音识别出错';
-        
+        let solution = '';
+
         switch (event.error) {
           case 'no-speech':
-            errorMessage = mobile ? '未检测到语音，请大声说话并重试' : '未检测到语音，请重试';
+            errorMessage = '未检测到语音信号';
+            solution = '请确保：1) 说话声音足够大 2) 在安静环境中使用 3) 距离麦克风适中（10-30cm）';
+            if (mobile) {
+              solution += ' 4) 移动端需等待说完后停止';
+            }
             break;
           case 'audio-capture':
-            errorMessage = '无法访问麦克风，请检查权限';
+            errorMessage = '无法访问麦克风设备';
+            solution = '请检查：1) 麦克风是否正常连接 2) 浏览器是否有麦克风权限 3) 尝试重新插拔麦克风';
             break;
           case 'not-allowed':
-            errorMessage = '麦克风权限被拒绝，请在浏览器设置中允许麦克风访问';
+            errorMessage = '麦克风权限被拒绝';
+            solution = '请在浏览器地址栏左侧（🔒 或 🎤 图标）点击，允许麦克风访问，然后刷新页面重试';
             break;
           case 'network':
-            errorMessage = '网络错误，请检查网络连接';
+            errorMessage = '网络连接错误';
+            solution = '请检查网络连接：1) 确保网络稳定 2) 尝试刷新页面 3) 关闭VPN（如果正在使用）';
             break;
           case 'service-not-allowed':
-            errorMessage = '语音服务不可用';
+            errorMessage = '语音识别服务不可用';
+            solution = '可能原因：1) 浏览器不支持该服务 2) 服务暂时不可用 3) 建议尝试其他浏览器';
             break;
           case 'aborted':
             // 主动停止时不报错
@@ -234,9 +243,21 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
             setIsListening(false);
             isStartingRef.current = false;
             return;
+          case 'language-not-supported':
+            errorMessage = '不支持当前语言';
+            solution = '请尝试：1) 切换到中文（普通话） 2) 检查系统语言设置 3) 使用其他浏览器';
+            break;
+          case 'bad-grammar':
+            errorMessage = '语音识别配置错误';
+            solution = '请刷新页面重试，或尝试使用其他浏览器';
+            break;
+          default:
+            errorMessage = `语音识别错误: ${event.error}`;
+            solution = '请重试或尝试：1) 刷新页面 2) 检查麦克风权限 3) 使用其他浏览器';
         }
-        
-        callbacksRef.current.onError?.(errorMessage);
+
+        const fullMessage = solution ? `${errorMessage}。${solution}` : errorMessage;
+        callbacksRef.current.onError?.(fullMessage);
         setIsListening(false);
         isStartingRef.current = false;
       };
@@ -271,12 +292,38 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
     };
   }, [continuous, language]);
 
-  const startListening = React.useCallback(() => {
+  const startListening = React.useCallback(async () => {
     console.log('▶️ Hook: 尝试开始监听 - 移动设备:', isMobile);
-    
+
+    // 检查基础环境
+    if (typeof window === 'undefined') {
+      console.error('❌ Hook: 运行环境不支持');
+      callbacksRef.current.onError?.('语音识别仅在浏览器环境中可用');
+      return;
+    }
+
+    // 检查浏览器支持
     if (!isSupported) {
       console.error('❌ Hook: 浏览器不支持');
-      callbacksRef.current.onError?.('浏览器不支持语音识别功能');
+      let errorMsg = '当前浏览器不支持语音识别功能。';
+      const userAgent = navigator.userAgent.toLowerCase();
+      if (userAgent.includes('chrome')) {
+        errorMsg += '建议：使用最新版本的Chrome浏览器';
+      } else if (userAgent.includes('safari')) {
+        errorMsg += '建议：使用最新版本的Safari浏览器（iOS需iOS 14.5+）';
+      } else if (userAgent.includes('edge')) {
+        errorMsg += '建议：使用最新版本的Edge浏览器';
+      } else {
+        errorMsg += '建议：使用Chrome、Safari或Edge浏览器';
+      }
+      callbacksRef.current.onError?.(errorMsg);
+      return;
+    }
+
+    // 检查HTTPS要求
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      console.error('❌ Hook: 需要HTTPS');
+      callbacksRef.current.onError?.('语音识别需要HTTPS安全连接或localhost环境，请通过正确方式访问网站');
       return;
     }
 
@@ -289,43 +336,68 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       console.log('🎙️ Hook: 启动语音识别');
       setTranscript('');
       isStartingRef.current = true;
-      
+
       try {
-        // 移动端需要特殊处理 - 先请求权限再启动
-        if (isMobile) {
-          navigator.mediaDevices.getUserMedia({ 
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true,
-              sampleRate: 16000
-            } 
-          })
-          .then((stream) => {
-            console.log('✅ 移动端媒体流获取成功');
-            // 立即关闭流，避免占用
-            stream.getTracks().forEach(track => track.stop());
-            
-            // 延迟启动，给浏览器时间准备
+        // 统一使用权限检查，提升可靠性
+        console.log('🔐 开始检查麦克风权限...');
+        await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 16000
+          }
+        })
+        .then((stream) => {
+          console.log('✅ 麦克风权限获取成功');
+          // 立即关闭流，避免占用
+          stream.getTracks().forEach(track => track.stop());
+
+          // 移动端延迟启动，桌面端立即启动
+          if (isMobile) {
+            console.log('⏳ 移动端延迟启动语音识别...');
             setTimeout(() => {
               if (recognitionRef.current && isStartingRef.current) {
+                console.log('🚀 启动移动端语音识别');
                 recognitionRef.current.start();
               }
             }, 200);
-          })
-          .catch((error) => {
-            console.error('❌ 移动端媒体流获取失败:', error);
-            isStartingRef.current = false;
-            callbacksRef.current.onError?.('无法获取麦克风权限，请在设置中允许');
-          });
-        } else {
-          // 桌面端直接启动
-          recognitionRef.current.start();
-        }
+          } else {
+            console.log('🚀 启动桌面端语音识别');
+            recognitionRef.current.start();
+          }
+        })
+        .catch((error) => {
+          console.error('❌ 麦克风权限获取失败:', error.name, error.message);
+          isStartingRef.current = false;
+
+          // 根据错误类型提供具体的解决方案
+          let errorMsg = '无法获取麦克风权限。';
+          let solution = '';
+
+          if (error.name === 'NotAllowedError') {
+            errorMsg = '麦克风权限被拒绝。';
+            solution = '请在浏览器地址栏左侧点击麦克风图标，允许麦克风访问，然后刷新页面重试。';
+          } else if (error.name === 'NotFoundError') {
+            errorMsg = '未检测到麦克风设备。';
+            solution = '请检查：1) 设备是否连接麦克风 2) 浏览器是否有麦克风权限 3) 其他应用是否正在使用麦克风';
+          } else if (error.name === 'NotReadableError') {
+            errorMsg = '麦克风被其他应用占用。';
+            solution = '请关闭其他使用麦克风的应用（如录音、微信、QQ等），然后重试。';
+          } else if (error.name === 'OverconstrainedError') {
+            errorMsg = '麦克风不支持所需配置。';
+            solution = '请尝试使用其他浏览器或设备。';
+          } else {
+            errorMsg = `麦克风访问错误: ${error.message}`;
+            solution = '请检查麦克风设置并确保已允许浏览器访问。';
+          }
+
+          callbacksRef.current.onError?.(errorMsg + ' ' + solution);
+        });
       } catch (error) {
         console.error('❌ Hook: 启动失败:', error);
         isStartingRef.current = false;
-        callbacksRef.current.onError?.('启动语音识别失败: ' + error);
+        callbacksRef.current.onError?.(`启动语音识别失败: ${error instanceof Error ? error.message : String(error)}`);
       }
     } else {
       console.warn('⚠️ Hook: 无法启动 - recognition存在:', !!recognitionRef.current, ', 正在监听:', isListening);

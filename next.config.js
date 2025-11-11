@@ -1,6 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -9,8 +8,8 @@ const nextConfig = {
     config.cache = false;
     return config;
   },
-  basePath: process.env.NODE_ENV === 'production' ? '' : '',
-  assetPrefix: process.env.NODE_ENV === 'production' ? '' : '',
+  // 移除output: 'export'以支持语音识别等动态功能
+  // 语音识别需要动态服务器环境，不支持静态导出
 };
 
 module.exports = nextConfig;
