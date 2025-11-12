@@ -364,7 +364,9 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
             }, 200);
           } else {
             console.log('🚀 启动桌面端语音识别');
-            recognitionRef.current.start();
+            if (recognitionRef.current && isStartingRef.current) {
+              recognitionRef.current.start();
+            }
           }
         })
         .catch((error) => {
